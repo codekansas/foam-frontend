@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block body %}
+{{ body | safe }}
+{% if backlinks %}
+<h2>Backlinks</h2>
+<ul>
+    {% for backlink in backlinks %}
+    <li>{{ backlink | safe }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

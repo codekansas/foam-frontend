@@ -10,10 +10,10 @@ Create a new Conda environment (or install the required dependencies) from the r
 conda install --yes --file requirements.txt
 ```
 
-Update the notes submodule in `.gitmodules` to point at your [FOAM][foam-github] Git repo. Then run:
+Set `NOTES_ROOT` environment variable to point at your [FOAM][foam-github] notes root directory:
 
 ```sh
-git submodule sync --recursive
+export NOTES_ROOT=/path/to/notes/root
 ```
 
 Simply serve the Flask app normally:

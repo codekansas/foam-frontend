@@ -1,36 +1,40 @@
 #!/usr/bin/env python
 
-import os
-from pathlib import Path
+from typing import Optional
 
-import markdown
-import markdown.extensions.fenced_code
-from flask import Flask
-from pygments.formatters import HtmlFormatter
+from flask import Flask, abort, render_template
+
+from backend import Backend
 
 app = Flask(__name__)
 
-NOTES_ROOT = Path(os.environ["NOTES_ROOT"])
+backend = Backend(app.root_path)
 
 
-@app.route("/<name>")
-def page(name: str) -> str:
-    readme_file = open(f"{name}.md", "r")
-    md_template_string = markdown.markdown(
-        readme_file.read(),
-        extensions=["fenced_code", "codehilite"],
-    )
-
-    formatter = HtmlFormatter(style="emacs", full=True, cssclass="codehilite")
-    css_string = formatter.get_style_defs()
-    md_css_string = "<style>" + css_string + "</style>"
-    md_template = md_css_string + md_template_string
-    return md_template
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template("404.html"), 404
 
 
 @app.route("/")
-def index() -> str:
-    return page("readme")
+@app.route("/<name>")
+def page(name: Optional[str] = None) -> str:
+    if name is None:
+        name = "readme"
+
+    if not backend.file_exists(name):
+        abort(404, description=f"Page not found: {name}")
+
+    title = backend.title(name)
+    body = backend.body(name)
+    backlinks = backend.backlinks(name)
+
+    return render_template(
+        "page.html",
+        title=title,
+        body=body,
+        backlinks=backlinks,
+    )
 
 
 if __name__ == "__main__":
