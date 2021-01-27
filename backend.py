@@ -86,6 +86,12 @@ class Backend:
                 "mdx_math",
                 "markdown_checklists.extension",
             ],
+            extension_configs={
+                "mdx_math": {
+                    "enable_dollar_delimiter": True,
+                    "add_preview": True,
+                },
+            },
             tab_length=2,
         )
 

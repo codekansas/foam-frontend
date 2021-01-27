@@ -39,6 +39,7 @@ def page(name: Optional[str] = None) -> str:
         title=backend.title(name),
         body=backend.body(name),
         backlinks=backend.backlinks(name),
+        note_name=f"{name}.md",
         note_path=backend.notes_path(name),
     )
 
