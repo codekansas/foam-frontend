@@ -127,9 +127,9 @@ class Backend:
         return self.notes_root / f"{fname}.md"
 
     def autocomplete(self, prefix: str, max_tags: int = 10) -> List[str]:
-        prefix = prefix.lower()
+        prefix = prefix.lower().replace(" ", "-")
         tags = [k for k in self._titles.keys() if prefix in k]
-        return sorted(tags)[:max_tags]
+        return [k for k in sorted(tags)[:max_tags]]
 
     def backlinks(self, fname: str) -> List[str]:
         return [
