@@ -1,0 +1,10 @@
+# .gitignore
+
+# Python
+*.py[co]
+__pycache__/
+
+# IDE
+.vscode/
+.DS_Store/
+*.code-workspace
