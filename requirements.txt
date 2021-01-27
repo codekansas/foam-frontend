@@ -3,3 +3,4 @@ flask
 markdown
 pygments
 python-markdown-math
+markdown-checklist

@@ -2,6 +2,7 @@
 
 __all__ = ["Backend"]
 
+import itertools
 import logging
 import os
 import pickle
@@ -79,10 +80,13 @@ class Backend:
 
         self.md_ctx = markdown.Markdown(
             extensions=[
+                "tables",
                 "fenced_code",
                 "codehilite",
                 "mdx_math",
+                "markdown_checklists.extension",
             ],
+            tab_length=2,
         )
 
         fpaths = list(self.notes_root.glob("*.md"))
@@ -116,8 +120,18 @@ class Backend:
     def notes_path(self, fname: str) -> Path:
         return self.notes_root / f"{fname}.md"
 
+    def autocomplete(self, prefix: str, max_tags: int = 10) -> List[str]:
+        prefix = prefix.lower()
+        tags = [k for k in self._titles.keys() if prefix in k]
+        return sorted(tags)[:max_tags]
+
     def backlinks(self, fname: str) -> List[str]:
-        return [self.render_link(b, self.title(b)) for b in self._backlinks[fname]]
+        return [
+            {
+                "title": self.title(b),
+                "value": b,
+            } for b in self._backlinks[fname]
+        ]
 
     def title(self, fname: str) -> str:
         if fname in self._titles:
@@ -128,19 +142,21 @@ class Backend:
         fpath = self.notes_path(fname)
         last_mod_time = fpath.stat().st_mtime
 
-        if self.ignore_cached:
+        def get_markdown(fpath: Path) -> str:
             with open(fpath, "r") as f:
-                markdown = self.md_ctx.convert(f.read())
+                markdown = self.md_ctx.convert("".join(f.readlines()[1:]))
+            markdown = re.sub(r"\[\[(.+?)\]\]", self.update_links, markdown)
+            return markdown
+
+        if self.ignore_cached:
+            markdown = get_markdown(fpath)
         else:
             cached_file = self.cached_file(fname)
             if cached_file.exists() and cached_file.stat().st_mtime > last_mod_time:
                 with open(cached_file, "r") as f:
                     return f.read()
-            with open(fpath, "r") as f:
-                markdown = self.md_ctx.convert(f.read())
+            markdown = get_markdown(fpath)
             with open(cached_file, "w") as f:
                 f.write(markdown)
-
-        markdown = re.sub(r"\[\[(.+?)\]\]", self.update_links, markdown)
 
         return markdown

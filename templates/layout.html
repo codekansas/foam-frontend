@@ -1,26 +1,121 @@
 <html>
+
 <head>
-    <title>{% block title %}{% endblock %}</title>
-    
-    <!-- Mathjax -->
-    <script type="text/javascript" async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-MML-AM_CHTML"></script>
-    <script type="text/x-mathjax-config">
-      MathJax.Hub.Config({
-        TeX: {
-          equationNumbers: {
-            autoNumber: "AMS"
-          }
-        },
-        tex2jax: {
-          inlineMath: [ ['$', '$'] ],
-          displayMath: [ ['$$', '$$'], ['\\[', '\\]'] ],
-          processEscapes: true,
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>{% block title %}{% endblock %}</title>
+
+  <!-- JQuery -->
+  <script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/jquery-ui.min.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/jquery-ui.min.css') }}">
+
+  <!-- Mathjax -->
+  <script type="text/javascript" async src="{{ url_for('static', filename='js/mathjax.min.js') }}"></script>
+  <script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+      TeX: {
+        equationNumbers: {
+          autoNumber: "AMS"
         }
-      });
-    </script>
-  
+      },
+      tex2jax: {
+        inlineMath: [ ['$', '$'] ],
+        displayMath: [ ['$$', '$$'], ['\\[', '\\]'] ],
+        processEscapes: true,
+      }
+    });
+  </script>
+
+  <!-- Bootstrap -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap-theme.min.css') }}">
+  <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+
+  <!-- Bespoke -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/page.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
 </head>
+
 <body>
-    {% block body %}{% endblock %}
+
+  <nav class="navbar navbar-dark fixed-top bg-dark flex-md-nowrap p-0 shadow">
+    <a class="navbar-brand col-sm-3 col-md-2 mr-0" href="{{ url_for('page') }}">Notes</a>
+    <input class="form-control form-control-dark w-100" type="text" id="autocomplete" placeholder="Search"
+      aria-label="Search">
+  </nav>
+
+  <div class="container-fluid">
+    <div class="row">
+
+      {% if backlinks %}
+      <nav class="col-md-2 d-none d-md-block bg-light sidebar">
+        <div class="sidebar-sticky">
+          <ul class="nav flex-column">
+            <li class="nav-item">
+              <a class="nav-link active" href="#">
+                Backlinks
+              </a>
+            </li>
+            {% for link in backlinks %}
+            <li class="nav-item">
+              <a class="nav-link" href="{{ link.value }}">
+                {{ link.title }}
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </nav>
+      {% endif %}
+
+      <main role="main" class="col-md-9 ml-sm-auto col-lg-10 px-4">
+        <div
+          class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+          <h1 class="h2">{% block page_title %}{% endblock %}</h1>
+          <div class="btn-toolbar mb-2 mb-md-0">
+            <div class="btn-group mr-2">
+              <a href="vscode://file/{{ note_path }}" role="button" class="btn btn-sm btn-outline-secondary">Open in VSCode</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="body-block">
+          {% block body %}{% endblock %}
+        </div>
+      </main>
+    </div>
+  </div>
+  <script>
+    $("#autocomplete").autocomplete({
+      source: function (request, response) {
+        console.log(request);
+        console.log("{{ url_for('autocomplete') }}");
+        $.ajax({
+          url: "{{ url_for('autocomplete') }}",
+          dataType: "json",
+          data: {
+            prefix: request.term,
+          },
+          success: function (data) {
+            response(data);
+          },
+        });
+      },
+      minLength: 3,
+      select: function (event, ui) {
+        location.href = ui.item.value;
+      },
+      open: function () {
+        $(this).autocomplete('widget').css({
+          zIndex: 9999,
+        });
+        return false;
+      },
+    });
+  </script>
 </body>
+
 </html>

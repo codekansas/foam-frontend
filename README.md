@@ -19,7 +19,7 @@ export NOTES_ROOT=/path/to/notes/root
 Simply serve the Flask app normally:
 
 ```sh
-python app.py
+flask run
 ```
 
 [foam-github]: https://github.com/foambubble/foam

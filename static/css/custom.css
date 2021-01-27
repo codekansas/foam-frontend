@@ -1,0 +1,11 @@
+input[type="checkbox"] {
+  margin-right: 1em !important;
+}
+
+.body-block > h2 {
+  margin-top: 1em;
+}
+
+.body-block > h3 {
+  margin-top: 0.8em;
+}
