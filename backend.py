@@ -32,7 +32,7 @@ class Backlinks:
         self.load()
 
     def load(self) -> None:
-        if self.cache_path.exists():
+        if not self.ignore_cached and self.cache_path.exists():
             with open(self.cache_path, "rb") as f:
                 pkl_data = pickle.load(f)
                 self.backlinks = pkl_data["backlinks"]
