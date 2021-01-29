@@ -2,14 +2,17 @@
 
 __all__ = ["Backend"]
 
+import copy
 import itertools
 import logging
 import os
 import pickle
 import re
+import sys
 from pathlib import Path
 from typing import List, Optional
 
+import click
 import markdown
 import markdown.extensions.codehilite
 import markdown.extensions.fenced_code
@@ -17,15 +20,34 @@ import markdown.extensions.fenced_code
 logger = logging.getLogger(__name__)
 
 
+def reset_logger() -> None:
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
+
+
 class Backlinks:
     """Utility class for efficiently managing backlinks."""
 
-    def __init__(self, cache_dir: Path, fpaths: List[Path]) -> None:
-        self.ignore_cached = bool(os.environ.get("IGNORE_CACHED", False))
-
-        self.cache_dir = cache_dir
-        self.cache_path = cache_dir / "backlinks.pkl"
+    def __init__(
+        self,
+        cache_dir: Optional[Path],
+        fpaths: List[Path],
+    ) -> None:
+        if cache_dir is None:
+            self.cache_path = None
+            self.ignore_cached = True
+        else:
+            self.cache_path = cache_dir / "backlinks.pkl"
+            self.ignore_cached = False
         self.fpaths = fpaths
+        self.stem_map = {fpath.stem: fpath for fpath in self.fpaths}
 
         self.backlinks = {}
         self.mtimes = {}
@@ -56,13 +78,41 @@ class Backlinks:
                 else:
                     self.backlinks[link_to].add(fpath.stem)
 
+    def rename(self, old_stem: str, new_stem: str) -> None:
+        old_fpath = self.stem_map[old_stem]
+        new_fpath = old_fpath.parent / f"{new_stem}.md"
+        old_fpath.rename(new_fpath)
+        self.stem_map.pop(old_stem)
+        self.stem_map[new_stem] = new_fpath
+        logger.info("Updated %s to %s", old_fpath, new_fpath)
+
+        for backlink in self.backlinks[old_stem]:
+            with open(self.stem_map[backlink], "r") as f:
+                contents = f.read()
+            new_contents = contents.replace(old_stem, new_stem)
+            with open(self.stem_map[backlink], "w") as f:
+                f.write(new_contents)
+            logger.info("Updated backlinks in %s", backlink)
+
+        if old_stem in self.backlinks:
+            self.backlinks[new_stem] = self.backlinks[old_stem]
+            self.backlinks.pop(old_stem)
+
+        for stem, backlinks in self.backlinks.items():
+            if old_stem in backlinks:
+                backlinks.add(new_stem)
+                backlinks.remove(old_stem)
+
     def save(self) -> None:
         with open(self.cache_path, "wb") as f:
             pkl_data = {"backlinks": self.backlinks, "mtimes": self.mtimes}
             pickle.dump(pkl_data, f)
 
-    def __getitem__(self, fpath: str) -> List[str]:
-        return list(sorted(self.backlinks.get(fpath, {})))
+    def __contains__(self, fstem: str) -> None:
+        return fstem in self.backlinks
+
+    def __getitem__(self, fstem: str) -> List[str]:
+        return list(sorted(self.backlinks.get(fstem, {})))
 
 
 class Backend:
@@ -72,11 +122,7 @@ class Backend:
         self.root_path = Path(root_path)
         self.cache_dir = self.root_path / ".cache"
         self.cache_dir.mkdir(exist_ok=True)
-
-        if "NOTES_ROOT" not in os.environ:
-            raise ValueError("Set NOTES_ROOT environment variable "
-                             "to point at your notes directory")
-        self.notes_root = Path(os.environ["NOTES_ROOT"])
+        self.notes_root = Backend.notes_root()
 
         self.md_ctx = markdown.Markdown(
             extensions=[
@@ -95,10 +141,26 @@ class Backend:
             tab_length=2,
         )
 
-        fpaths = list(self.notes_root.glob("*.md"))
-        logger.info("Building directory of %d files", len(fpaths))
-        self._titles = {fpath.stem: self.read_title(fpath) for fpath in fpaths}
-        self._backlinks = Backlinks(self.cache_dir, fpaths)
+        self.fpaths = list(self.notes_root.glob("*.md"))
+        logger.info("Building directory of %d files", len(self.fpaths))
+        self._titles = {
+            fpath.stem: self.read_title(fpath)
+            for fpath in self.fpaths
+        }
+        self._backlinks = Backlinks(self.cache_dir, self.fpaths)
+
+    @staticmethod
+    def notes_root() -> Path:
+        if "NOTES_ROOT" not in os.environ:
+            raise ValueError("Set NOTES_ROOT environment variable "
+                             "to point at your notes directory")
+        notes_root = Path(os.environ["NOTES_ROOT"])
+        if not notes_root.exists():
+            raise ValueError(f"Invalid NOTES_ROOT: {notes_root}")
+        return notes_root
+
+    def rename(self, old_stem: str, new_stem: str) -> None:
+        self._backlinks.rename(old_stem, new_stem)
 
     def render_link(self, href: str, value: str) -> str:
         return f"<a href={href}>{value}</a>"
@@ -131,12 +193,12 @@ class Backend:
         tags = [k for k in self._titles.keys() if prefix in k]
         return [k for k in sorted(tags)[:max_tags]]
 
-    def backlinks(self, fname: str) -> List[str]:
+    def backlinks(self, fstem: str) -> List[str]:
         return [
             {
                 "title": self.title(b),
                 "value": b,
-            } for b in self._backlinks[fname]
+            } for b in self._backlinks[fstem]
         ]
 
     def title(self, fname: str) -> str:
@@ -166,3 +228,29 @@ class Backend:
                 f.write(markdown)
 
         return markdown
+
+
+if __name__ == "__main__":
+
+    @click.group()
+    def cli():
+        reset_logger()
+
+    @cli.command()
+    @click.argument("prefix")
+    @click.option("-n", "--new-prefix", default=None)
+    def rename(prefix: str, new_prefix: Optional[str] = None) -> None:
+        backend = Backend(Path.cwd())
+
+        if new_prefix is None:
+            new_prefix = prefix + "."
+            prefix = prefix + "-"
+        logger.info("Updating %s to %s", prefix, new_prefix)
+
+        for fpath in backend.fpaths:
+            if fpath.stem.startswith(prefix):
+                new_stem = fpath.stem.replace(prefix, new_prefix)
+                backend.rename(fpath.stem, new_stem)
+        logger.info("Finished updating")
+
+    cli()
