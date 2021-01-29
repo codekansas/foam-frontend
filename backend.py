@@ -299,7 +299,7 @@ if __name__ == "__main__":
 
     @cli.command()
     @click.argument("stem")
-    @click.option("--prefix/--no-shout", default=False)
+    @click.option("--prefix/--no-prefix", default=False)
     def remove(stem: str, prefix: bool) -> None:
         backend = Backend(Path.cwd())
         if prefix:
