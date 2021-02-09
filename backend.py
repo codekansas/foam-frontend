@@ -168,6 +168,9 @@ class Backlinks:
 
 class Backend:
     def __init__(self, root_path: str) -> None:
+        self.root_path = Path(root_path)
+        self.notes_root = Backend.notes_root()
+
         self.ignore_cached = bool(os.environ.get("IGNORE_CACHED", False))
         if self.ignore_cached:
             logger.info("Ignoring cached files")
@@ -176,16 +179,12 @@ class Backend:
             self.cache_dir = self.root_path / ".cache"
             self.cache_dir.mkdir(exist_ok=True)
 
-        self.root_path = Path(root_path)
-        self.notes_root = Backend.notes_root()
-
         self.md_ctx = markdown.Markdown(
             extensions=[
                 "tables",
                 "fenced_code",
                 "codehilite",
                 "mdx_math",
-                "markdown_checklists.extension",
             ],
             extension_configs={
                 "mdx_math": {
