@@ -98,3 +98,12 @@ body {
   border-color: transparent;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
 }
+
+/*
+ * Table
+ */
+
+td, th {
+  border: 1px solid black;
+  padding: 0.5em;
+}

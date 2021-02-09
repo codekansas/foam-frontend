@@ -103,6 +103,9 @@ class Backlinks:
     def rename(self, old_stem: str, new_stem: str) -> None:
         old_fpath = self.stem_map[old_stem]
         new_fpath = old_fpath.parent / f"{new_stem}.md"
+        if old_fpath.parent != new_fpath.parent:
+            new_fpath.parent.mkdir(exist_ok=True, parents=True)
+            new_stem = new_fpath.stem
         old_fpath.rename(new_fpath)
         self.stem_map.pop(old_stem)
         self.stem_map[new_stem] = new_fpath
@@ -152,6 +155,9 @@ class Backlinks:
                     "mtimes": self.mtimes,
                 }
                 pickle.dump(pkl_data, f)
+    
+    def path(self, stem: str) -> Optional[Path]:
+        return self.stem_map.get(stem, None)
 
     def __contains__(self, fstem: str) -> None:
         return fstem in self.backlinks
@@ -190,7 +196,7 @@ class Backend:
             tab_length=2,
         )
 
-        self.fpaths = list(self.notes_root.glob("*.md"))
+        self.fpaths = list(self.notes_root.glob("**/*.md"))
         logger.info("Building directory of %d files", len(self.fpaths))
         self._backlinks = Backlinks(self.cache_dir, self.fpaths)
 
@@ -224,10 +230,8 @@ class Backend:
         return self.cache_dir / f"{fname}.html"
 
     def file_exists(self, fname: str) -> bool:
-        return self.notes_path(fname).exists()
-
-    def notes_path(self, fname: str) -> Path:
-        return self.notes_root / f"{fname}.md"
+        fpath = self.path(fname)
+        return fpath is not None and fpath.exists()
 
     def autocomplete(self, prefix: str, max_tags: int = 10) -> List[str]:
         prefix = prefix.lower().replace(" ", "-")
@@ -241,6 +245,9 @@ class Backend:
                 "value": b,
             } for b in self._backlinks[fstem]
         ]
+    
+    def path(self, fname: str) -> Optional[Path]:
+        return self._backlinks.path(fname)
 
     def title(self, fname: str) -> str:
         if fname in self._backlinks.titles:
@@ -248,7 +255,7 @@ class Backend:
         return self.default_title(fname)
 
     def body(self, fname: str) -> str:
-        fpath = self.notes_path(fname)
+        fpath = self.path(fname)
         last_mod_time = fpath.stat().st_mtime
 
         def get_markdown(fpath: Path) -> str:
@@ -282,20 +289,15 @@ if __name__ == "__main__":
 
     @cli.command()
     @click.argument("prefix")
-    @click.option("-n", "--new-prefix", default=None)
-    def rename(prefix: str, new_prefix: Optional[str]) -> None:
+    @click.argument("new_prefix")
+    def rename(prefix: str, new_prefix: str) -> None:
         backend = Backend(Path.cwd())
-
-        if new_prefix is None:
-            new_prefix = prefix + "."
-            prefix = prefix + "-"
-        logger.info("Updating %s to %s", prefix, new_prefix)
 
         for fpath in backend.fpaths:
             if fpath.stem.startswith(prefix):
                 new_stem = fpath.stem.replace(prefix, new_prefix)
                 backend.rename(fpath.stem, new_stem)
-        logger.info("Finished updating")
+        logger.info("Updated %s to %s", prefix, new_prefix)
 
     @cli.command()
     @click.argument("stem")
@@ -314,68 +316,67 @@ if __name__ == "__main__":
                 logger.info("Stem %s not found", stem)
 
     @cli.command()
-    @click.argument("prefix")
-    @click.option("-f", "--start-from", default=None)
-    @click.option("-k", "--skip-prefixes", default=None)
-    @click.option("-s", "--stem", default=None)
-    def add_prefix(
-        prefix: str,
-        start_from: Optional[str],
-        skip_prefixes: Optional[str],
-        stem: Optional[str],
-    ) -> None:
+    def classify() -> None:
         backend = Backend(Path.cwd())
-        if stem is not None:
-            new_stem = f"{prefix}.{stem}"
-            backend.rename(stem, new_stem)
-            logger.info("Renamed %s to %s", stem, new_stem)
-            return
+        notes_root = Backend.notes_root()
+        categories = {
+            str(fpath.parent.relative_to(notes_root))
+            for fpath in backend.fpaths
+            if fpath.parent != notes_root
+        }
 
-        if skip_prefixes is None:
-            skip_prefixes = []
-        else:
-            skip_prefixes = skip_prefixes.split(",")
+        def _input(prompt: str) -> str:
+            return input(prompt).strip().lower()
 
-        def should_skip(stem: str) -> bool:
-            if stem.startswith(prefix):
-                logger.info("Skipping prefix %s for stem %s", prefix, stem)
-                return True
-            if start_from is not None and stem < start_from:
-                logger.info("Skipping stem %s (before %s)", stem, start_from)
-                return True
-            if any(fpath.stem.startswith(p) for p in skip_prefixes):
-                logger.info("Skipping stem %s (matches a skip prefix)", stem)
-                return True
-            return False
+        def get_category(fpath: str) -> Optional[str]:
+            category = _input(f"Category for {fpath.stem}: ")
+            if category == "delete":
+                backend.remove(fpath.stem)
+                return None
+            if category == "skip":
+                return None
+            if category in categories:
+                return category
+            candidates = {c for c in categories if c.startswith(category)}
+            if len(candidates) > 1:
+                logger.info("Found multiple candidates: %s", candidates)
+                return get_category(fpath)
+            elif len(candidates) == 1:
+                candidate = list(candidates)[0]
+                conf = _input(f"Assuming you mean {candidate} ([n] to abort) ")
+                if conf == "n":
+                    return category
+                else:
+                    return candidate
+            else:
+                conf = _input(f"Adding category {category} ([n] to abort) ")
+                if conf == "n":
+                    return get_category(fpath)
+                else:
+                    return category
 
+        def print_categories():
+            print("-" * len("Categories:"))
+            print("Categories:")
+            for category in sorted(categories):
+                print(f" - {category}")
+            print("-" * len("Categories:"))
+
+        print_categories()
         for fpath in sorted(backend.fpaths):
-            if should_skip(fpath.stem):
+            if fpath.parent != notes_root:
                 continue
-            add_prefix = None
-            while add_prefix not in ("y", "n"):
-                add_prefix = input(f"Add prefix to {fpath.stem}? [y/n] ")
-                add_prefix = add_prefix.strip().lower()
-            if add_prefix == "y":
-                new_stem = f"{prefix}.{fpath.stem}"
-                backend.rename(fpath.stem, new_stem)
-                logger.info("Updated %s to %s", fpath.stem, new_stem)
-
-    @cli.command()
-    @click.argument("string")
-    @click.argument("output", type=click.File("w"), default="-")
-    @click.option("-i", "--ignore-prefix", default=None)
-    def search(
-        string: str,
-        output: click.File,
-        ignore_prefix: Optional[str],
-    ) -> None:
-        backend = Backend(Path.cwd())
-
-        for fpath in sorted(backend.fpaths):
-            if ignore_prefix is not None:
-                if fpath.stem.startswith(ignore_prefix):
-                    continue
-            if string in fpath.stem:
-                output.write(f"{fpath.stem}\n")
+            if fpath.stem.lower() == "readme":
+                logger.info("Skipping README")
+                continue
+            category = get_category(fpath)
+            if category is None:
+                logger.info("Skipping category: %s", fpath.stem)
+                continue
+            categories.add(category)
+            if category not in categories:
+                print_categories()
+            new_stem = f"{category}/{fpath.stem}"
+            backend.rename(fpath.stem, new_stem)
 
     cli()
